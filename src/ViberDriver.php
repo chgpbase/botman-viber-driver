@@ -2,6 +2,7 @@
 
 namespace TheArdent\Drivers\Viber;
 
+use BotMan\BotMan\Messages\Attachments\Contact;
 use JsonSerializable;
 use BotMan\BotMan\Interfaces\DriverEventInterface;
 use Illuminate\Support\Collection;
@@ -27,6 +28,7 @@ use TheArdent\Drivers\Viber\Events\UserUnsubscribed;
 use TheArdent\Drivers\Viber\Events\Webhook;
 use TheArdent\Drivers\Viber\Exceptions\ViberException;
 use TheArdent\Drivers\Viber\Extensions\AccountInfo;
+use TheArdent\Drivers\Viber\Extensions\ContactTemplate;
 use TheArdent\Drivers\Viber\Extensions\FileTemplate;
 use TheArdent\Drivers\Viber\Extensions\KeyboardTemplate;
 use TheArdent\Drivers\Viber\Extensions\LocationTemplate;
@@ -167,10 +169,47 @@ class ViberDriver extends HttpDriver
         if (isset($this->payload->get('message')['text'])) {
             $message = new IncomingMessage(
                 $this->payload->get('message')['text'], $user, $this->getBotId(),
-                $this->payload
+                $this->payload, $this->config->get('bot_id', '')
             );
+            /// добавил обработку входящих сообщений с картинками и вложениями
+
+        } elseif ($this->payload->get('message') && $this->payload->get('message')['type']==='picture') {
+            $message = new IncomingMessage(
+                Image::PATTERN, $user, $this->getBotId(),
+                $this->payload, $this->config->get('bot_id', '')
+            );
+            $message->setImages([new Image( $this->payload->get('message')['media'])]);
+        } elseif ($this->payload->get('message') && $this->payload->get('message')['type']==='audio') {
+            $message = new IncomingMessage(
+                Audio::PATTERN, $user, $this->getBotId(),
+                $this->payload, $this->config->get('bot_id', '')
+            );
+            $message->setAudio([new Audio( $this->payload->get('message')['media'])]);
+        } elseif ($this->payload->get('message') && $this->payload->get('message')['type']==='file') {
+            $message = new IncomingMessage(
+                File::PATTERN, $user, $this->getBotId(),
+                $this->payload, $this->config->get('bot_id', '')
+            );
+            $message->setFiles([new File( $this->payload->get('message')['media'])]);
+        } elseif ($this->payload->get('message') && $this->payload->get('message')['type']==='video') {
+            $message = new IncomingMessage(
+                Video::PATTERN, $user, $this->getBotId(),
+                $this->payload, $this->config->get('bot_id', '')
+            );
+            $message->setVideos([new Video( $this->payload->get('message')['media'])]);
+        } elseif ($this->payload->get('message') && $this->payload->get('message')['type']==='contact') {
+            $message = new IncomingMessage(
+                Contact::PATTERN, $user, $this->getBotId(),
+                $this->payload, $this->config->get('bot_id', '')
+            );
+            $message->setContact(new Contact(
+                $this->payload->get('message')['contact']['phone_number'],
+                $this->payload->get('message')['contact']['name'],
+                '','', null,  $this->payload->get('message')['contact']
+            ));
+            ///конец изменений
         } elseif ($this->payload->get('message') && $this->payload->get('message')['type'] === 'location') {
-            $message = new IncomingMessage(Location::PATTERN, $user, $this->getBotId(), $this->payload);
+            $message = new IncomingMessage(Location::PATTERN, $user, $this->getBotId(), $this->payload, $this->config->get('bot_id', ''));
             $message->setLocation(
                 new Location(
                     $this->payload->get('message')['location']['lat'],
@@ -179,7 +218,7 @@ class ViberDriver extends HttpDriver
                 )
             );
         } else {
-            $message = new IncomingMessage('', $user, $this->getBotId(), $this->payload);
+            $message = new IncomingMessage('', $user, $this->getBotId(), $this->payload, $this->config->get('bot_id', ''));
         }
 
         return [$message];
@@ -199,7 +238,7 @@ class ViberDriver extends HttpDriver
             $keyboard = new KeyboardTemplate($question->getText());
             foreach ($actions as $action) {
                 $text = $action['text'];
-                $actionType = $action['additional']['url'] ? 'open-url' : 'reply';
+                $actionType = key_exists('url', $action['additional']) ? 'open-url' : 'reply';
                 $actionBody = $action['additional']['url'] ?? $action['value'] ?? $action['text'];
                 $silent = isset($action['additional']['url']);
                 $keyboard->addButton($text, $actionType, $actionBody, 'regular', null, 6, $silent);
@@ -259,6 +298,8 @@ class ViberDriver extends HttpDriver
                     );
                 } elseif ($attachmentType === 'location' && $attachment instanceof Location) {
                     $template = new LocationTemplate($attachment->getLatitude(), $attachment->getLongitude());
+                }  elseif ($attachmentType === 'contact' && $attachment instanceof Contact) {
+                    $template = new ContactTemplate($attachment->getFirstName().($attachment->getLastName()!=''?' '.$attachment->getLastName():''), $attachment->getPhoneNumber());
                 }
 
                 if (isset($template)) {
@@ -327,7 +368,8 @@ class ViberDriver extends HttpDriver
         if (($responseData['status'] ?? null) === 0 && ($responseData['user'] ?? null)) {
             $user = $responseData['user'];
         } else {
-            $user = $payload->get('user');
+//            $user = $payload->get('user');
+            $user = $payload->get('sender');
         }
 
         $name = $user['name'] ?? '';

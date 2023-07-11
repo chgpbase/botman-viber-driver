@@ -33,8 +33,11 @@ class FileTemplate implements JsonSerializable
 	public function __construct($fileUrl, $name, $size = null)
 	{
 		$this->fileUrl = $fileUrl;
-		$this->name = $name;
+		//$this->name = $name;
 		$this->size = $size;
+        $ext= substr(strrchr($name, '.'), 1);
+        if($ext=='')  $ext=substr(strrchr($fileUrl, '.'), 1);
+        $this->name=$name.'.'.$ext;
 	}
 
 	/**
@@ -63,7 +66,8 @@ class FileTemplate implements JsonSerializable
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 		curl_setopt($ch, CURLOPT_HEADER, true);
 		curl_setopt($ch, CURLOPT_NOBODY, true);
-		$size = curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
+        $data = curl_exec($ch);
+        $size = curl_getinfo($ch, CURLINFO_CONTENT_LENGTH_DOWNLOAD);
 
 		curl_close($ch);
 
